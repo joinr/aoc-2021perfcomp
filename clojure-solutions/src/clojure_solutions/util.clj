@@ -49,6 +49,44 @@
 
 (defn elem [x xs]
   (some #{x} xs))
+;;Execution time mean : 486.917037 ns
+
+;;faster path using identity, since we're comparing keywords.
+#_
+(defn elem-id [x xs]
+  (some #(identical? % x) xs))
+;;Execution time mean : 183.413372 ns
+
+;;avoid seq coercion and leverage internal reduction
+;;where possible with vectors.  no first/rest looping.
+(defn elem-id [x xs]
+  (reduce (fn [acc v]
+            (if (identical? x v)
+              (reduced v)
+              acc)) nil xs))
+;;Execution time mean : 13.682727 ns
+
+;;use eduction without apply and length fns...
+(defmacro educt [& xforms]
+  `(clojure.core.Eduction. (comp ~@(butlast xforms)) ~(last xforms)))
+
+;;a bit faster than set coercion.
+(defn distinct! ^java.util.HashSet [xs]
+  (->> xs
+       (reduce (fn [^java.util.HashSet acc x]
+                 (doto acc (.add x)))
+               (java.util.HashSet.))))
+
+(defn memo-1 [f]
+  (let [cache (java.util.HashMap.)]
+    (fn [x]
+      (let [known (.get cache x)]
+        (if (nil? known)
+          (let [res (f x)
+                _   (.put cache x res)]
+            res)
+          known)))))
+
 
 (defn permutations [[h & t :as coll]]
   (if (nil? t)
