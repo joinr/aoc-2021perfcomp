@@ -87,7 +87,6 @@
             res)
           known)))))
 
-
 (defn permutations [[h & t :as coll]]
   (if (nil? t)
     [coll]
