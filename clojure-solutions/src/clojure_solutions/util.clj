@@ -70,12 +70,33 @@
 (defmacro educt [& xforms]
   `(clojure.core.Eduction. (comp ~@(butlast xforms)) ~(last xforms)))
 
+;;eliminate comp.
+(defmacro inline-comp [& xforms]
+  (let [binds (for [f xforms]
+                [(gensym "func") f])
+        fs   (reverse (map first binds))]
+    `(let [~@(reduce (fn [acc [f x]] (conj acc f x)) [] binds)]
+       (fn [x#] (-> x# ~@fs)))))
+
+;;(let [f (u/inline-comp #(+ 3 %) #(* % 2) #(- % 1))] (c/quick-bench (f 10)))
+;;Evaluation count : 16478064 in 6 samples of 2746344 calls.
+;;Execution time mean : 34.611968 ns
+
+;;(let [f (comp #(+ 3 %) #(* % 2) #(- % 1))] (c/quick-bench (f 10)))
+;;Evaluation count : 10046652 in 6 samples of 1674442 calls.
+;;Execution time mean : 59.544141 ns
+
+;;now using inline-comp
+(defmacro faster-educt [& xforms]
+  `(clojure.core.Eduction. (inline-comp ~@(butlast xforms)) ~(last xforms)))
+
 ;;a bit faster than set coercion.
 (defn distinct! ^java.util.HashSet [xs]
   (->> xs
        (reduce (fn [^java.util.HashSet acc x]
                  (doto acc (.add x)))
                (java.util.HashSet.))))
+
 
 (defn memo-1 [f]
   (let [cache (java.util.HashMap.)]
@@ -86,6 +107,29 @@
                 _   (.put cache x res)]
             res)
           known)))))
+
+;;count an eduction.
+(defn ecount [xf coll]
+  (transduce xf (completing (fn [acc _] (unchecked-inc acc))) 0 coll))
+
+;;alternate variant using computeIfAbsent and
+;;java.util.function.Function blech.
+;;this is actually a bit slower since it
+;;adds a null check for safety...
+
+;;lame wrapper.
+(comment
+  (defn jf [f]
+    (reify java.util.function.Function
+      (apply [this k]
+        (f k))))
+
+  (defn memo-1 [f]
+    (let [cache (java.util.HashMap.)
+          f     (jf f)]
+      (fn [x]
+        (.computeIfAbsent cache x f))))
+)
 
 (defn permutations [[h & t :as coll]]
   (if (nil? t)

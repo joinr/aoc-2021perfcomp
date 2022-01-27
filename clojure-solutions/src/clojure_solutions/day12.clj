@@ -102,6 +102,7 @@
                                                             (unchecked-inc acc))) 0))))
 
 ;;avoid clojure.lang.Util.equiv for identical?
+#_
 (defn- solve [keep connections]
   (letfn ((go [path kw]
               (let [path* (conj path kw) ; new path
@@ -114,6 +115,67 @@
          (transduce (mapcat #(go [:start] %))
               (completing (fn [acc _]
                             (unchecked-inc acc))) 0))))
+
+
+;;reorder akin to haskell version, deferring work as much as possible.
+;;gets us down to ~560ms.  avoids extra map lookup and eduction ctor.
+#_
+(defn- solve [keep connections]
+  (letfn ((go [path kw]
+              (let [path* (conj path kw)]
+                (if (identical? kw :end)
+                  [path*] ; new path
+                  (let [;; Places we can visit
+                        downs (u/educt (filter #(keep path* %)) (connections kw))]
+                  (u/educt (mapcat #(go path* %)) downs))))))
+    (->> (connections :start)
+         (transduce (mapcat #(go [:start] %))
+                    (completing (fn [acc _]
+                                  (unchecked-inc acc))) 0))))
+
+;;make conj cheaper with direct method, avoid clojure.lang.RT overhead.
+;;~527 ms lol.
+#_
+(defn- solve [keep connections]
+  (letfn ((go [path kw]
+              (let [path* (.cons ^clojure.lang.PersistentVector path kw)]
+                (if (identical? kw :end)
+                  [path*] ; new path
+                  (let [;; Places we can visit
+                        downs (u/educt (filter #(keep path* %)) (connections kw))]
+                    (u/educt (mapcat #(go path* %)) downs))))))
+    (->> (connections :start)
+         (transduce (mapcat #(go [:start] %))
+                    (completing (fn [acc _]
+                                  (unchecked-inc acc))) 0))))
+
+;;using u/inline-comp inside of u/faster-educt gets us down to 516ms.
+(defn- solve [keep connections]
+  (letfn ((go [path kw]
+              (let [path* (.cons ^clojure.lang.PersistentVector path kw)]
+                (if (identical? kw :end)
+                  [path*] ; new path
+                  (let [;; Places we can visit
+                        downs (u/faster-educt (filter #(keep path* %)) (connections kw))]
+                    (u/faster-educt (mapcat #(go path* %)) downs))))))
+    (->> (connections :start)
+         (transduce (mapcat #(go [:start] %))
+                    (completing (fn [acc _]
+                                  (unchecked-inc acc))) 0))))
+
+;;clean up the transducing count with ecount.
+;;seems to slow us down a bit, hmm.
+#_
+(defn- solve [keep connections]
+  (letfn ((go [path kw]
+              (let [path* (.cons ^clojure.lang.PersistentVector path kw)]
+                (if (identical? kw :end)
+                  [path*] ; new path
+                  (let [;; Places we can visit
+                        downs (u/faster-educt (filter #(keep path* %)) (connections kw))]
+                    (u/faster-educt (mapcat #(go path* %)) downs))))))
+    (->> (connections :start)
+         (u/ecount (mapcat #(go [:start] %))))))
 
 ;; => 4754
 (defn- part1 [xs]
